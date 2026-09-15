@@ -28,6 +28,10 @@ import (
 //go:generate go run github.com/AshokShau/gotdbot/scripts/tools
 
 // main serves as the entry point for the application.
+http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    _, _ = w.Write([]byte("OK"))
+})
 func main() {
 	go func() {
 		if err := http.ListenAndServe("0.0.0.0:"+config.Port, nil); err != nil {
