@@ -59,7 +59,7 @@ func activeVcHandler(c *td.Client, m *td.Message) error {
 				trackName := html.EscapeString(currentSong.Name)
 				trackURL := html.EscapeString(currentSong.URL)
 				if trackURL == "" {
-					trackURL = "https://t.me/FallenProjects"
+					trackURL = "https://t.me/ArchonNetwork"
 				}
 				durStr := utils.SecToMin(currentSong.Duration)
 				trackLink = fmt.Sprintf("<a href='%s'>%s</a> (%s)", trackURL, trackName, durStr)
