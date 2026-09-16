@@ -54,7 +54,6 @@ var DevsBtn = cb("Devs", "help_devs", gotdbot.ButtonStyleDefault{})
 var PlaylistBtn = cb("Playlist", "help_playlist", gotdbot.ButtonStyleDefault{})
 var AutoplayBtn = cb("Autoplay", "help_autoplay", gotdbot.ButtonStyleDefault{})
 
-var SourceCodeBtn = url("Source Code", "https://github.com/AshokShau/TgMusicBot", gotdbot.ButtonStylePrimary{})
 var channelBtn = url("Updates", config.SupportChannel, gotdbot.ButtonStyleDefault{})
 var groupBtn = url("Group", config.SupportGroup, gotdbot.ButtonStyleDefault{})
 
@@ -201,17 +200,16 @@ func ControlButtons(mode string) *gotdbot.ReplyMarkupInlineKeyboard {
 func AddMeMarkup(username string) *gotdbot.ReplyMarkupInlineKeyboard {
 
 	addMeBtn := url(
-		"Aᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
+		"Aᴅᴅ Mᴇ",
 		fmt.Sprintf("https://t.me/%s?startgroup=true", username),
 		gotdbot.ButtonStylePrimary{},
 	)
 
 	return &gotdbot.ReplyMarkupInlineKeyboard{
 		Rows: [][]gotdbot.InlineKeyboardButton{
-			{addMeBtn},
 			{HelpBtn},
 			{channelBtn, groupBtn},
-			{SourceCodeBtn},
+			{addMeBtn},
 		},
 	}
 }
