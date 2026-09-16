@@ -46,7 +46,7 @@ func url(text, link string, style gotdbot.ButtonStyle) gotdbot.InlineKeyboardBut
 
 var CloseBtn = cb("Close", "vcplay_close", gotdbot.ButtonStyleDanger{})
 var HomeBtn = cb("Home", "help_back", gotdbot.ButtonStylePrimary{})
-var HelpBtn = cb("Help", "help_all", gotdbot.ButtonStyleDefault{})
+var HelpBtn = cb("𝖧𝖾𝗅𝗉 & 𝖢𝗈𝗆𝗆𝖺𝗇𝖽𝗌", "help_all", gotdbot.ButtonStyleDefault{})
 var UserBtn = cb("Users", "help_user", gotdbot.ButtonStyleDefault{})
 var AdminBtn = cb("Admins", "help_admin", gotdbot.ButtonStyleDefault{})
 var OwnerBtn = cb("Owner", "help_owner", gotdbot.ButtonStyleDefault{})
@@ -54,8 +54,8 @@ var DevsBtn = cb("Devs", "help_devs", gotdbot.ButtonStyleDefault{})
 var PlaylistBtn = cb("Playlist", "help_playlist", gotdbot.ButtonStyleDefault{})
 var AutoplayBtn = cb("Autoplay", "help_autoplay", gotdbot.ButtonStyleDefault{})
 
-var channelBtn = url("Updates", config.SupportChannel, gotdbot.ButtonStyleDefault{})
-var groupBtn = url("Group", config.SupportGroup, gotdbot.ButtonStyleDefault{})
+var channelBtn = url("𝖭𝖾𝗐𝗌", config.SupportChannel, gotdbot.ButtonStyleDefault{})
+var groupBtn = url("𝖲𝗎𝗉𝗉𝗈𝗋𝗍", config.SupportGroup, gotdbot.ButtonStyleDefault{})
 
 func SupportKeyboard() *gotdbot.ReplyMarkupInlineKeyboard {
 	return &gotdbot.ReplyMarkupInlineKeyboard{
@@ -200,7 +200,7 @@ func ControlButtons(mode string) *gotdbot.ReplyMarkupInlineKeyboard {
 func AddMeMarkup(username string) *gotdbot.ReplyMarkupInlineKeyboard {
 
 	addMeBtn := url(
-		"Aᴅᴅ Mᴇ",
+		"𝖲𝗎𝗆𝗆𝗈𝗇 𝖬𝖾",
 		fmt.Sprintf("https://t.me/%s?startgroup=true", username),
 		gotdbot.ButtonStylePrimary{},
 	)
