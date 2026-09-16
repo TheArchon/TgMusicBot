@@ -23,7 +23,7 @@ func handleVoiceChatMessage(c *td.Client, update *td.UpdateNewMessage) error {
 
 	if m.IsGroup() {
 		text := fmt.Sprintf(
-			"This chat (%d) is not a supergroup yet.\n<b>⚠️ Please convert this chat to a supergroup and add me as admin.</b>\n\nIf you don't know how to convert, use this guide:\n🔗 https://te.legra.ph/How-to-Convert-a-Group-to-a-Supergroup-01-02\n\nIf you have any questions, join our support group:",
+			"This chat (%d) is not a supergroup yet.\n<b>⚠️ Please convert this chat to a supergroup and add me as admin.</b>\n\nIf you don't know how to convert, use this guide:\n🔗 https://telegra.ph/How-to-Convert-a-Group-to-a-Supergroup-09-16\n\nIf you have any questions, join our support group:",
 			chatID,
 		)
 
