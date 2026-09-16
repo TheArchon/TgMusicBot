@@ -133,7 +133,7 @@ func BackHelpMenuKeyboard() *gotdbot.ReplyMarkupInlineKeyboard {
 	return &gotdbot.ReplyMarkupInlineKeyboard{
 		Rows: [][]gotdbot.InlineKeyboardButton{
 			{HelpBtn, HomeBtn},
-			{CloseBtn},
+			{CloseBtn, SourceCodeBtn},
 		},
 	}
 }
