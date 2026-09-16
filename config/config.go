@@ -38,7 +38,7 @@ var (
 	DownloadsDir        = getEnv("DOWNLOADS_DIR", "database")
 	SupportGroup        = getEnv("SUPPORT_GROUP", "https://t.me/ArchonCare")
 	SupportChannel      = getEnv("SUPPORT_CHANNEL", "https://t.me/ArchonNetwork")
-	StartImg            = getEnv("START_IMG", "https://i.pinimg.com/736x/0d/f4/65/0df465d1e98239ecb6283400605fc813.jpg")
+	StartImg            = getEnv("START_IMG", "https://graph.org/file/886f8e17b591c7a1e513e-d0d1473d9194342aaf.jpg")
 	Port                = getEnv("PORT", "6060")
 	AutoLeave           = getEnvBool("AUTO_LEAVE", false)
 	EnableVideoPlayback = getEnvBool("ENABLE_VPLAY", true)
