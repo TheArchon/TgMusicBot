@@ -163,11 +163,10 @@ func helpCallbackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if strings.Contains(data, "help_all") {
 		_ = cb.Answer(c, 0, false, "Opening help menu...", "")
 		response := fmt.Sprintf(
-			"<h3>📖%s— Help Menu</h3>\n"+
-				"<p><b>%s</b> is a fast, reliable, and feature-rich music bot for Telegram voice and video chats.</p>\n\n"+
-				"<p><b>Supported platforms:</b> YouTube, Spotify, Apple Music, SoundCloud, Deezer, Twitch, and many more.</p>\n\n"+
-				"<p>Select a category below to browse the available commands.</p>",
-			c.Me.FirstName,
+			"<h3>📖 %s — Help Menu</h3>\n"+
+				"<p>Hello<b>%s</b> pick a category below to see what I can do.</p>\n\n"+
+				"<p><b>Supported platforms:</b> YouTube, Spotify, Apple Music, SoundCloud, Deezer, JioSaavn and more.</p>\n\n",
+		    c.Me.FirstName,
 			user.FirstName,
 		)
 
