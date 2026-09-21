@@ -121,23 +121,13 @@ func (c *TelegramCalls) playSong(bot *td.Client, chatID int64, song *utils.Cache
 		song.Duration = utils.GetMediaDuration(song.FilePath)
 	}
 
-	text := fmt.Sprintf(
-		"<u><b>| Started streaming</b></u>\n\n<b>Title:</b> <a href='%s'>%s</a>\n\n<b>Duration:</b> %s min\n<b>Requested by:</b> %s",
-		html.EscapeString(song.URL),
-		html.EscapeString(song.Name),
-		utils.SecToMin(song.Duration),
-		html.EscapeString(song.User),
-	)
-
-	_, err = reply.EditText(bot, text, &td.EditTextMessageOpts{
-		ReplyMarkup:           core.ControlButtons("play"),
-		ParseMode:             "HTML",
-		DisableWebPagePreview: true,
-	})
-
+	_, err = SendNowPlaying(bot, chatID, reply, song, "play")
 	if err != nil {
-		slog.Info("[playSong] Failed to edit message", "error", err)
-		return nil
+		slog.Info("[playSong] Failed to send now-playing thumbnail", "error", err)
+		_, _ = bot.SendTextMessage(chatID, fmt.Sprintf("Now playing: %s", html.EscapeString(song.Name)), &td.SendTextMessageOpts{
+			ParseMode:   "HTML",
+			ReplyMarkup: core.ControlButtons("play"),
+		})
 	}
 
 	return nil
