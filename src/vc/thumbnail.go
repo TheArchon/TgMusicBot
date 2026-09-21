@@ -4,6 +4,7 @@ import (
 	"ashokshau/tgmusic/config"
 	"ashokshau/tgmusic/src/core"
 	"ashokshau/tgmusic/src/utils"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,16 +17,19 @@ import (
 	td "github.com/AshokShau/gotdbot"
 )
 
+//go:embed player_template.png
+var playerTemplate []byte
+
 const (
-	playerWidth  = 1600
-	playerHeight = 900
+	playerWidth  = 1280
+	playerHeight = 720
 	fontRegular  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 	fontBold     = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+	fontSerif    = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
 )
 
-// SendNowPlaying builds a cinematic player card from the track thumbnail and
-// sends that generated image instead of sending the raw thumbnail directly.
-// The Telegram inline controls are kept below the image.
+// SendNowPlaying renders the track artwork into the fixed reference-style
+// player card and sends the resulting image with the existing controls.
 func SendNowPlaying(bot *td.Client, chatID int64, oldMessage *td.Message, song *utils.CachedTrack, mode string) (*td.Message, error) {
 	if song == nil {
 		return nil, fmt.Errorf("track is nil")
@@ -36,19 +40,8 @@ func SendNowPlaying(bot *td.Client, chatID int64, oldMessage *td.Message, song *
 		return nil, err
 	}
 
-	caption := fmt.Sprintf(
-		"<b>Now Playing</b>\n<b>Title:</b> <a href='%s'>%s</a>\n<b>Duration:</b> %s\n<b>Requested by:</b> %s",
-		td.EscapeHTML(song.URL),
-		td.EscapeHTML(song.Name),
-		utils.SecToMin(song.Duration),
-		td.EscapeHTML(song.User),
-	)
-
 	msg, err := bot.SendPhoto(chatID, td.InputFileLocal{Path: playerImage}, &td.SendPhotoOpts{
-		Caption:               caption,
-		ParseMode:             "HTML",
-		ShowCaptionAboveMedia: false,
-		ReplyMarkup:           core.ControlButtons(mode),
+		ReplyMarkup: core.ControlButtons(mode),
 	})
 	if err != nil {
 		return nil, err
@@ -57,7 +50,6 @@ func SendNowPlaying(bot *td.Client, chatID int64, oldMessage *td.Message, song *
 	if oldMessage != nil {
 		_ = oldMessage.Delete(bot, true)
 	}
-
 	return msg, nil
 }
 
@@ -116,7 +108,6 @@ func downloadThumbnail(rawURL, path string) error {
 		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("thumbnail http status: %s", resp.Status)
 	}
@@ -144,28 +135,29 @@ func downloadThumbnail(rawURL, path string) error {
 }
 
 func generateFallbackThumbnail(path string) error {
-	filter := "color=c=#111318:s=800x450,format=rgb24,drawbox=x=24:y=24:w=752:h=402:color=#252832@1:t=4,drawtext=fontfile='" + fontBold + "':text='MUSIC':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h-text_h)/2"
+	filter := "color=c=#0b0b0d:s=900x900,format=rgb24,drawbox=x=18:y=18:w=864:h=864:color=#222225@1:t=4,drawtext=fontfile='" + fontBold + "':text='MUSIC':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=(h-text_h)/2"
 	return runFFmpeg("-y", "-f", "lavfi", "-i", filter, "-frames:v", "1", "-q:v", "3", path)
 }
 
 func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
-	name := strings.TrimSpace(song.Name)
+	templatePath := filepath.Join(config.DownloadsDir, ".player_template.png")
+	if err := os.WriteFile(templatePath, playerTemplate, 0644); err != nil {
+		return fmt.Errorf("write player template: %w", err)
+	}
+
+	name := fitText(strings.TrimSpace(song.Name), 34)
 	if name == "" {
 		name = "Unknown Track"
 	}
-	artist := strings.TrimSpace(song.Channel)
+	artist := fitText(strings.TrimSpace(song.Channel), 24)
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
-	platform := platformLabel(song.Platform)
+	platform := fitText(platformLabel(song.Platform), 18)
 	duration := utils.SecToMin(song.Duration)
 	if duration == "" {
 		duration = "0:00"
 	}
-
-	name = fitText(name, 22)
-	artist = fitText(artist, 18)
-	platform = fitText(platform, 18)
 
 	tmpDir, err := os.MkdirTemp(config.DownloadsDir, ".player-text-")
 	if err != nil {
@@ -174,9 +166,12 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 	defer os.RemoveAll(tmpDir)
 
 	texts := map[string]string{
-		"platform": platform, "name": name, "artist": artist,
-		"elapsed": "0:00", "remaining": "-" + duration,
-		"now": "Now Playing", "volume": "",
+		"platform":  platform,
+		"name":      name,
+		"artist":    artist,
+		"elapsed":   "0:00",
+		"remaining": "-" + duration,
+		"now":       "Now Playing",
 	}
 	paths := make(map[string]string, len(texts))
 	for key, value := range texts {
@@ -187,31 +182,24 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 		paths[key] = path
 	}
 
+	// The supplied reference is used as the fixed visual template. Only the
+	// artwork and song-specific text/progress values are rendered dynamically.
 	filter := strings.Join([]string{
-		"color=c=#070707:s=1280x720:d=1[bg]",
 		"[0:v]scale=520:520:force_original_aspect_ratio=increase,crop=520:520,setsar=1[art]",
-		"[bg][art]overlay=70:100:format=auto[v0]",
-		"[v0]drawbox=x=68:y=98:w=524:h=524:color=#101010@1:t=2[v1]",
-		"[v1]drawbox=x=625:y=72:w=585:h=576:color=#070707@1:t=fill[v2]",
-		"[v2]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["platform"] + "':fontcolor=#a7a7a7:fontsize=27:x=660:y=92[v3]",
-		"[v3]drawtext=fontfile='" + fontBold + "':textfile='" + paths["name"] + "':fontcolor=#f4f4f4:fontsize=34:x=660:y=135[v4]",
-		"[v4]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["artist"] + "':fontcolor=#a7a7a7:fontsize=27:x=660:y=185[v5]",
-		"[v5]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["elapsed"] + "':fontcolor=#bdbdbd:fontsize=20:x=660:y=228[v6]",
-		"[v6]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["remaining"] + "':fontcolor=#bdbdbd:fontsize=20:x=1150:y=228[v7]",
-		"[v7]drawbox=x=730:y=237:w=400:h=5:color=#454545:t=fill[v8]",
-		"[v8]drawbox=x=730:y=237:w=125:h=5:color=#e6e6e6:t=fill[v9]",
-		"[v9]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["now"] + "':fontcolor=#eeeeee:fontsize=24:x=660:y=280[v10]",
-		"[v10]drawtext=fontfile='" + fontRegular + "':text='♡':fontcolor=#eeeeee:fontsize=42:x=1148:y=270[v11]",
-		"[v11]drawtext=fontfile='" + fontRegular + "':text='|◀':fontcolor=#f5f5f5:fontsize=45:x=730:y=360[v12]",
-		"[v12]drawtext=fontfile='" + fontBold + "':text='Ⅱ':fontcolor=#f5f5f5:fontsize=48:x=900:y=360[v13]",
-		"[v13]drawtext=fontfile='" + fontRegular + "':text='▶|':fontcolor=#f5f5f5:fontsize=45:x=1060:y=360[v14]",
-		"[v14]drawtext=fontfile='" + fontRegular + "':text='◎':fontcolor=#d8d8d8:fontsize=36:x=1150:y=365[v15]",
-		"[v15]drawbox=x=705:y=543:w=425:h=5:color=#454545:t=fill[v16]",
-		"[v16]drawbox=x=705:y=543:w=145:h=5:color=#e6e6e6:t=fill[v17]",
-		"[v17]drawtext=fontfile='" + fontRegular + "':text='V':fontcolor=#d8d8d8:fontsize=24:x=1148:y=527[v18]",
-		"[v18]format=yuvj420p[out]",
+		"[1:v]scale=1280:720:force_original_aspect_ratio=disable[base]",
+		"[base][art]overlay=98:100:format=auto[v0]",
+		"[v0]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["platform"] + "':fontcolor=#bcbcbc:fontsize=23:x=661:y=100[v1]",
+		"[v1]drawtext=fontfile='" + fontBold + "':textfile='" + paths["name"] + "':fontcolor=#f5f5f5:fontsize=30:x=661:y=126[v2]",
+		"[v2]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["artist"] + "':fontcolor=#a9a9a9:fontsize=24:x=661:y=163[v3]",
+		"[v3]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["elapsed"] + "':fontcolor=#c8c8c8:fontsize=19:x=661:y=214[v4]",
+		"[v4]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["remaining"] + "':fontcolor=#c8c8c8:fontsize=19:x=1124:y=214[v5]",
+		"[v5]drawbox=x=730:y=221:w=373:h=8:color=#454545:t=fill[v6]",
+		"[v6]drawbox=x=730:y=221:w=228:h=8:color=#dcdcdc:t=fill[v7]",
+		"[v7]drawtext=fontfile='" + fontSerif + "':textfile='" + paths["now"] + "':fontcolor=#ededed:fontsize=18:x=727:y=248[v8]",
+		"[v8]format=yuvj420p[out]",
 	}, ";")
-	return runFFmpeg("-y", "-i", thumb, "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", "-q:v", "2", output)
+
+	return runFFmpeg("-y", "-i", thumb, "-i", templatePath, "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", "-q:v", "2", output)
 }
 
 func fitText(s string, max int) string {
@@ -246,24 +234,6 @@ func platformLabel(platform string) string {
 		}
 		return platform
 	}
-}
-
-func ffmpegText(s string) string {
-	// drawtext parses these characters even when passed as an argv item.
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "'", "\\'")
-	s = strings.ReplaceAll(s, ":", "\\\\:")
-	s = strings.ReplaceAll(s, "%", "\\\\%")
-	return s
-}
-
-func shortenText(s string, max int) string {
-	s = strings.TrimSpace(s)
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return string(r[:max-1]) + "…"
 }
 
 func runFFmpeg(args ...string) error {
