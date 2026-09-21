@@ -359,27 +359,22 @@ func handleSingleTrack(c *td.Client, m *td.Message, updater *td.Message, song ut
 		return err
 	}
 
-	escURLnp := html.EscapeString(saveCache.URL)
-	escNamenp := html.EscapeString(saveCache.Name)
-	escUsernp := html.EscapeString(saveCache.User)
-
-	nowPlaying := fmt.Sprintf(
-		"<u><b>| Started streaming</b></u>\n\n<b>Title:</b> <a href='%s'>%s</a>\n\n<b>Duration:</b> %s min\n<b>Requested by:</b> %s",
-		escURLnp, escNamenp, utils.SecToMin(song.Duration), escUsernp,
-	)
-
-	_, err := updater.EditText(c, nowPlaying, &td.EditTextMessageOpts{
-		ReplyMarkup:           core.ControlButtons("play"),
-		ParseMode:             "HTML",
-		DisableWebPagePreview: true,
-	})
-
+	_, err := vc.SendNowPlaying(c, chatId, updater, &saveCache, "play")
 	if err != nil {
-		c.Logger.Warn("Edit message failed", "error", err)
-		return err
+		c.Logger.Warn("Failed to send now-playing thumbnail", "error", err)
+		_, err = updater.EditText(c, fmt.Sprintf(
+			"<u><b>| Started streaming</b></u>\n\n<b>Title:</b> <a href='%s'>%s</a>\n\n<b>Duration:</b> %s min\n<b>Requested by:</b> %s",
+			html.EscapeString(saveCache.URL),
+			html.EscapeString(saveCache.Name),
+			utils.SecToMin(saveCache.Duration),
+			html.EscapeString(saveCache.User),
+		), &td.EditTextMessageOpts{
+			ReplyMarkup:           core.ControlButtons("play"),
+			ParseMode:             "HTML",
+			DisableWebPagePreview: true,
+		})
 	}
-
-	return nil
+	return err
 }
 
 // handleMultipleTracks handles multiple tracks.
