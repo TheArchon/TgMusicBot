@@ -157,40 +157,60 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
-	platform := strings.TrimSpace(song.Platform)
-	if platform == "" {
-		platform = "Music"
-	}
+	platform := platformLabel(song.Platform)
 	requester := song.User
 	if requester == "" {
 		requester = "Unknown"
 	}
 
-	name = shortenText(name, 34)
-	artist = shortenText(artist, 30)
-	requester = shortenText(requester, 24)
-	platform = shortenText(platform, 18)
+	name = shortenText(name, 42)
+	artist = shortenText(artist, 32)
+	requester = shortenText(requester, 28)
 	duration := utils.SecToMin(song.Duration)
 	if duration == "" {
 		duration = "0:00"
 	}
 
-	// The card intentionally mirrors the supplied reference: album artwork on
-	// the left and a clean black player interface on the right.
+	// Dynamic text is written to text files instead of being embedded directly
+	// in the FFmpeg filter. This prevents song titles containing ':', quotes,
+	// %, brackets, etc. from breaking the filter graph.
+	tmpDir, err := os.MkdirTemp(config.DownloadsDir, ".player-text-")
+	if err != nil {
+		return fmt.Errorf("create player text directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	texts := map[string]string{
+		"platform":  platform,
+		"name":      name,
+		"artist":    artist,
+		"elapsed":   "0:00",
+		"remaining": "-" + duration,
+		"requester": "Requested by: " + requester,
+	}
+	paths := make(map[string]string, len(texts))
+	for key, value := range texts {
+		path := filepath.Join(tmpDir, key+".txt")
+		if err := os.WriteFile(path, []byte(value), 0644); err != nil {
+			return fmt.Errorf("write player text %s: %w", key, err)
+		}
+		paths[key] = path
+	}
+
 	filter := strings.Join([]string{
 		"[0:v]scale=700:700:force_original_aspect_ratio=increase,crop=700:700,setsar=1,eq=contrast=1.05:saturation=0.82,boxblur=0.35[art]",
 		"color=c=#070809:s=1600x900:d=1[bg]",
 		"[bg][art]overlay=70:100:format=auto[v0]",
 		"[v0]drawbox=x=68:y=98:w=704:h=704:color=#34363a@0.95:t=3[v1]",
-		"[v1]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText(platform) + "':fontcolor=#a8abb0:fontsize=30:x=820:y=118[v2]",
-		"[v2]drawtext=fontfile='" + fontBold + "':text='" + ffmpegText(name) + "':fontcolor=#ffffff:fontsize=46:x=820:y=168[v3]",
-		"[v3]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText(artist) + "':fontcolor=#aeb2b8:fontsize=34:x=820:y=228[v4]",
-		"[v4]drawtext=fontfile='" + fontRegular + "':text='0:00':fontcolor=#c7c9cc:fontsize=25:x=820:y=292[v5]",
-		"[v5]drawtext=fontfile='" + fontRegular + "':text='-" + ffmpegText(duration) + "':fontcolor=#c7c9cc:fontsize=25:x=1410:y=292[v6]",
+		"[v1]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["platform"] + "':fontcolor=#a8abb0:fontsize=30:x=820:y=118[v2]",
+		"[v2]drawtext=fontfile='" + fontBold + "':textfile='" + paths["name"] + "':fontcolor=#ffffff:fontsize=46:x=820:y=168[v3]",
+		"[v3]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["artist"] + "':fontcolor=#aeb2b8:fontsize=34:x=820:y=228[v4]",
+		"[v4]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["elapsed"] + "':fontcolor=#c7c9cc:fontsize=25:x=820:y=292[v5]",
+		"[v5]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["remaining"] + "':fontcolor=#c7c9cc:fontsize=25:x=1410:y=292[v6]",
 		"[v6]drawbox=x=900:y=304:w=500:h=7:color=#41444a:t=fill[v7]",
 		"[v7]drawbox=x=900:y=304:w=150:h=7:color=#eeeeee:t=fill[v8]",
 		"[v8]drawtext=fontfile='" + fontRegular + "':text='Now Playing':fontcolor=#f0f0f0:fontsize=30:x=820:y=370[v9]",
-		"[v9]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText("Requested by: "+requester) + "':fontcolor=#c4c6ca:fontsize=27:x=820:y=655[v10]",
+		"[v9]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["requester"] + "':fontcolor=#c4c6ca:fontsize=27:x=820:y=655[v10]",
 		"[v10]drawtext=fontfile='" + fontBold + "':text='|<':fontcolor=#ffffff:fontsize=55:x=900:y=475[v11]",
 		"[v11]drawtext=fontfile='" + fontBold + "':text='||':fontcolor=#ffffff:fontsize=55:x=1115:y=475[v12]",
 		"[v12]drawtext=fontfile='" + fontBold + "':text='>|':fontcolor=#ffffff:fontsize=55:x=1320:y=475[v13]",
@@ -205,12 +225,34 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 	return runFFmpeg("-y", "-i", thumb, "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", "-q:v", "2", output)
 }
 
+func platformLabel(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case utils.YouTube:
+		return "YouTube"
+	case utils.Spotify:
+		return "Spotify"
+	case utils.JioSaavn:
+		return "JioSaavn"
+	case utils.Apple:
+		return "Apple Music"
+	case utils.SoundCloud:
+		return "SoundCloud"
+	case utils.Telegram:
+		return "Telegram"
+	default:
+		if platform == "" {
+			return "Music"
+		}
+		return platform
+	}
+}
+
 func ffmpegText(s string) string {
 	// drawtext parses these characters even when passed as an argv item.
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "'", "\\'")
-	s = strings.ReplaceAll(s, ":", "\\:")
-	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, ":", "\\\\:")
+	s = strings.ReplaceAll(s, "%", "\\\\%")
 	return s
 }
 
