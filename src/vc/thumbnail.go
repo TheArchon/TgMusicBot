@@ -5,13 +5,10 @@ import (
 	"ashokshau/tgmusic/src/core"
 	"ashokshau/tgmusic/src/utils"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/jpeg"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,27 +16,35 @@ import (
 	td "github.com/AshokShau/gotdbot"
 )
 
-// SendNowPlaying sends the player as a photo with the track thumbnail and controls.
-// If a platform thumbnail cannot be downloaded, a generic music thumbnail is generated.
+const (
+	playerWidth  = 1600
+	playerHeight = 900
+	fontRegular  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+	fontBold     = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+)
+
+// SendNowPlaying builds a cinematic player card from the track thumbnail and
+// sends that generated image instead of sending the raw thumbnail directly.
+// The Telegram inline controls are kept below the image.
 func SendNowPlaying(bot *td.Client, chatID int64, oldMessage *td.Message, song *utils.CachedTrack, mode string) (*td.Message, error) {
 	if song == nil {
 		return nil, fmt.Errorf("track is nil")
 	}
 
-	thumbnail, err := ensureTrackThumbnail(song)
+	playerImage, err := ensurePlayerImage(song)
 	if err != nil {
 		return nil, err
 	}
 
 	caption := fmt.Sprintf(
-		"<u><b>| Started streaming</b></u>\n\n<b>Title:</b> <a href='%s'>%s</a>\n\n<b>Duration:</b> %s min\n<b>Requested by:</b> %s",
+		"<b>Now Playing</b>\n<b>Title:</b> <a href='%s'>%s</a>\n<b>Duration:</b> %s\n<b>Requested by:</b> %s",
 		td.EscapeHTML(song.URL),
 		td.EscapeHTML(song.Name),
 		utils.SecToMin(song.Duration),
 		td.EscapeHTML(song.User),
 	)
 
-	msg, err := bot.SendPhoto(chatID, td.InputFileLocal{Path: thumbnail}, &td.SendPhotoOpts{
+	msg, err := bot.SendPhoto(chatID, td.InputFileLocal{Path: playerImage}, &td.SendPhotoOpts{
 		Caption:               caption,
 		ParseMode:             "HTML",
 		ShowCaptionAboveMedia: false,
@@ -56,32 +61,41 @@ func SendNowPlaying(bot *td.Client, chatID int64, oldMessage *td.Message, song *
 	return msg, nil
 }
 
-func ensureTrackThumbnail(song *utils.CachedTrack) (string, error) {
+func ensurePlayerImage(song *utils.CachedTrack) (string, error) {
 	if err := os.MkdirAll(config.DownloadsDir, 0755); err != nil {
 		return "", fmt.Errorf("create downloads directory: %w", err)
 	}
 
 	id := sanitizeThumbnailID(song.TrackID)
 	if id == "" {
+		id = sanitizeThumbnailID(song.Name)
+	}
+	if id == "" {
 		id = "track"
 	}
-	path := filepath.Join(config.DownloadsDir, "thumb_"+id+".jpg")
 
-	if stat, err := os.Stat(path); err == nil && stat.Size() > 0 {
-		return path, nil
+	output := filepath.Join(config.DownloadsDir, "player_"+id+".jpg")
+	if stat, err := os.Stat(output); err == nil && stat.Size() > 0 {
+		return output, nil
 	}
 
-	if song.Thumbnail != "" {
-		if err := downloadThumbnail(song.Thumbnail, path); err == nil {
-			return path, nil
+	thumb := filepath.Join(config.DownloadsDir, "thumb_"+id+".jpg")
+	if stat, err := os.Stat(thumb); err != nil || stat.Size() == 0 {
+		if song.Thumbnail != "" {
+			if err := downloadThumbnail(song.Thumbnail, thumb); err != nil {
+				if err := generateFallbackThumbnail(thumb); err != nil {
+					return "", err
+				}
+			}
+		} else if err := generateFallbackThumbnail(thumb); err != nil {
+			return "", err
 		}
 	}
 
-	if err := generateGenericThumbnail(path); err != nil {
+	if err := renderPlayerCard(thumb, output, song); err != nil {
 		return "", err
 	}
-
-	return path, nil
+	return output, nil
 }
 
 func sanitizeThumbnailID(id string) string {
@@ -96,7 +110,7 @@ func sanitizeThumbnailID(id string) string {
 }
 
 func downloadThumbnail(rawURL, path string) error {
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(rawURL)
 	if err != nil {
 		return err
@@ -112,7 +126,6 @@ func downloadThumbnail(rawURL, path string) error {
 	if err != nil {
 		return err
 	}
-
 	_, copyErr := io.Copy(f, io.LimitReader(resp.Body, 8<<20))
 	closeErr := f.Close()
 	if copyErr != nil {
@@ -123,68 +136,97 @@ func downloadThumbnail(rawURL, path string) error {
 		_ = os.Remove(tmp)
 		return closeErr
 	}
-
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
-
 	return nil
 }
 
-func generateGenericThumbnail(path string) error {
-	const width, height = 800, 450
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
+func generateFallbackThumbnail(path string) error {
+	filter := "color=c=#111318:s=800x450,format=rgb24,drawbox=x=24:y=24:w=752:h=402:color=#252832@1:t=4,drawtext=fontfile='" + fontBold + "':text='MUSIC':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h-text_h)/2"
+	return runFFmpeg("-y", "-f", "lavfi", "-i", filter, "-frames:v", "1", "-q:v", "3", path)
+}
 
-	// Dark music-player style background.
-	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.RGBA{18, 18, 24, 255}}, image.Point{}, draw.Src)
-
-	// Simple abstract record/disc and music note. No external font/assets required.
-	cx, cy := width/2, height/2
-	for radius := 150; radius >= 30; radius -= 20 {
-		col := color.RGBA{
-			uint8(35 + (150-radius)/3),
-			uint8(35 + (150-radius)/4),
-			uint8(48 + (150-radius)/2),
-			255,
-		}
-		for y := cy - radius; y <= cy+radius; y++ {
-			for x := cx - radius; x <= cx+radius; x++ {
-				dx, dy := x-cx, y-cy
-				if dx*dx+dy*dy <= radius*radius {
-					img.Set(x, y, col)
-				}
-			}
-		}
+func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
+	name := song.Name
+	if name == "" {
+		name = "Unknown Track"
+	}
+	artist := song.Channel
+	if artist == "" {
+		artist = "Unknown Artist"
+	}
+	platform := strings.TrimSpace(song.Platform)
+	if platform == "" {
+		platform = "Music"
+	}
+	requester := song.User
+	if requester == "" {
+		requester = "Unknown"
 	}
 
-	// Music note made from rectangles/circles.
-	note := color.RGBA{235, 235, 245, 255}
-	draw.Draw(img, image.Rect(cx+30, cy-100, cx+55, cy+65), &image.Uniform{C: note}, image.Point{}, draw.Src)
-	draw.Draw(img, image.Rect(cx+55, cy-100, cx+125, cy-75), &image.Uniform{C: note}, image.Point{}, draw.Src)
-
-	for y := cy + 40; y <= cy+90; y++ {
-		for x := cx + 5; x <= cx+55; x++ {
-			dx, dy := x-(cx+30), y-(cy+65)
-			if dx*dx+dy*dy <= 25*25 {
-				img.Set(x, y, note)
-			}
-		}
-	}
-	for y := cy - 15; y <= cy+35; y++ {
-		for x := cx + 100; x <= cx+150; x++ {
-			dx, dy := x-(cx+125), y-(cy+10)
-			if dx*dx+dy*dy <= 25*25 {
-				img.Set(x, y, note)
-			}
-		}
+	name = shortenText(name, 34)
+	artist = shortenText(artist, 30)
+	requester = shortenText(requester, 24)
+	platform = shortenText(platform, 18)
+	duration := utils.SecToMin(song.Duration)
+	if duration == "" {
+		duration = "0:00"
 	}
 
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	// The card intentionally mirrors the supplied reference: album artwork on
+	// the left and a clean black player interface on the right.
+	filter := strings.Join([]string{
+		"[0:v]scale=700:700:force_original_aspect_ratio=increase,crop=700:700,setsar=1,eq=contrast=1.05:saturation=0.82,boxblur=0.35[art]",
+		"color=c=#070809:s=1600x900:d=1[bg]",
+		"[bg][art]overlay=70:100:format=auto[v0]",
+		"[v0]drawbox=x=68:y=98:w=704:h=704:color=#34363a@0.95:t=3[v1]",
+		"[v1]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText(platform) + "':fontcolor=#a8abb0:fontsize=30:x=820:y=118[v2]",
+		"[v2]drawtext=fontfile='" + fontBold + "':text='" + ffmpegText(name) + "':fontcolor=#ffffff:fontsize=46:x=820:y=168[v3]",
+		"[v3]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText(artist) + "':fontcolor=#aeb2b8:fontsize=34:x=820:y=228[v4]",
+		"[v4]drawtext=fontfile='" + fontRegular + "':text='0:00':fontcolor=#c7c9cc:fontsize=25:x=820:y=292[v5]",
+		"[v5]drawtext=fontfile='" + fontRegular + "':text='-" + ffmpegText(duration) + "':fontcolor=#c7c9cc:fontsize=25:x=1410:y=292[v6]",
+		"[v6]drawbox=x=900:y=304:w=500:h=7:color=#41444a:t=fill[v7]",
+		"[v7]drawbox=x=900:y=304:w=150:h=7:color=#eeeeee:t=fill[v8]",
+		"[v8]drawtext=fontfile='" + fontRegular + "':text='Now Playing':fontcolor=#f0f0f0:fontsize=30:x=820:y=370[v9]",
+		"[v9]drawtext=fontfile='" + fontRegular + "':text='" + ffmpegText("Requested by: "+requester) + "':fontcolor=#c4c6ca:fontsize=27:x=820:y=655[v10]",
+		"[v10]drawtext=fontfile='" + fontBold + "':text='|<':fontcolor=#ffffff:fontsize=55:x=900:y=475[v11]",
+		"[v11]drawtext=fontfile='" + fontBold + "':text='||':fontcolor=#ffffff:fontsize=55:x=1115:y=475[v12]",
+		"[v12]drawtext=fontfile='" + fontBold + "':text='>|':fontcolor=#ffffff:fontsize=55:x=1320:y=475[v13]",
+		"[v13]drawtext=fontfile='" + fontRegular + "':text='VOLUME':fontcolor=#d8dadd:fontsize=30:x=820:y=735[v14]",
+		"[v14]drawbox=x=900:y=742:w=500:h=7:color=#41444a:t=fill[v15]",
+		"[v15]drawbox=x=900:y=742:w=180:h=7:color=#eeeeee:t=fill[v16]",
+		"[v16]drawtext=fontfile='" + fontRegular + "':text='♡':fontcolor=#d8dadd:fontsize=48:x=1450:y=370[v17]",
+		"[v17]drawtext=fontfile='" + fontRegular + "':text='◉':fontcolor=#d8dadd:fontsize=38:x=1455:y=490[v18]",
+		"[v18]format=yuvj420p[out]",
+	}, ";")
 
-	return jpeg.Encode(f, img, &jpeg.Options{Quality: 88})
+	return runFFmpeg("-y", "-i", thumb, "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", "-q:v", "2", output)
+}
+
+func ffmpegText(s string) string {
+	// drawtext parses these characters even when passed as an argv item.
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "'", "\\'")
+	s = strings.ReplaceAll(s, ":", "\\:")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	return s
+}
+
+func shortenText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
+}
+
+func runFFmpeg(args ...string) error {
+	cmd := exec.Command("ffmpeg", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg player render failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
