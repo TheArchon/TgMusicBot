@@ -149,31 +149,24 @@ func generateFallbackThumbnail(path string) error {
 }
 
 func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
-	name := song.Name
+	name := strings.TrimSpace(song.Name)
 	if name == "" {
 		name = "Unknown Track"
 	}
-	artist := song.Channel
+	artist := strings.TrimSpace(song.Channel)
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
 	platform := platformLabel(song.Platform)
-	requester := song.User
-	if requester == "" {
-		requester = "Unknown"
-	}
-
-	name = shortenText(name, 42)
-	artist = shortenText(artist, 32)
-	requester = shortenText(requester, 28)
 	duration := utils.SecToMin(song.Duration)
 	if duration == "" {
 		duration = "0:00"
 	}
 
-	// Dynamic text is written to text files instead of being embedded directly
-	// in the FFmpeg filter. This prevents song titles containing ':', quotes,
-	// %, brackets, etc. from breaking the filter graph.
+	name = fitText(name, 22)
+	artist = fitText(artist, 18)
+	platform = fitText(platform, 18)
+
 	tmpDir, err := os.MkdirTemp(config.DownloadsDir, ".player-text-")
 	if err != nil {
 		return fmt.Errorf("create player text directory: %w", err)
@@ -181,12 +174,9 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 	defer os.RemoveAll(tmpDir)
 
 	texts := map[string]string{
-		"platform":  platform,
-		"name":      name,
-		"artist":    artist,
-		"elapsed":   "0:00",
-		"remaining": "-" + duration,
-		"requester": "Requested by: " + requester,
+		"platform": platform, "name": name, "artist": artist,
+		"elapsed": "0:00", "remaining": "-" + duration,
+		"now": "Now Playing", "volume": "",
 	}
 	paths := make(map[string]string, len(texts))
 	for key, value := range texts {
@@ -198,31 +188,42 @@ func renderPlayerCard(thumb, output string, song *utils.CachedTrack) error {
 	}
 
 	filter := strings.Join([]string{
-		"[0:v]scale=700:700:force_original_aspect_ratio=increase,crop=700:700,setsar=1,eq=contrast=1.05:saturation=0.82,boxblur=0.35[art]",
-		"color=c=#070809:s=1600x900:d=1[bg]",
+		"color=c=#070707:s=1280x720:d=1[bg]",
+		"[0:v]scale=520:520:force_original_aspect_ratio=increase,crop=520:520,setsar=1[art]",
 		"[bg][art]overlay=70:100:format=auto[v0]",
-		"[v0]drawbox=x=68:y=98:w=704:h=704:color=#34363a@0.95:t=3[v1]",
-		"[v1]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["platform"] + "':fontcolor=#a8abb0:fontsize=30:x=820:y=118[v2]",
-		"[v2]drawtext=fontfile='" + fontBold + "':textfile='" + paths["name"] + "':fontcolor=#ffffff:fontsize=46:x=820:y=168[v3]",
-		"[v3]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["artist"] + "':fontcolor=#aeb2b8:fontsize=34:x=820:y=228[v4]",
-		"[v4]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["elapsed"] + "':fontcolor=#c7c9cc:fontsize=25:x=820:y=292[v5]",
-		"[v5]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["remaining"] + "':fontcolor=#c7c9cc:fontsize=25:x=1410:y=292[v6]",
-		"[v6]drawbox=x=900:y=304:w=500:h=7:color=#41444a:t=fill[v7]",
-		"[v7]drawbox=x=900:y=304:w=150:h=7:color=#eeeeee:t=fill[v8]",
-		"[v8]drawtext=fontfile='" + fontRegular + "':text='Now Playing':fontcolor=#f0f0f0:fontsize=30:x=820:y=370[v9]",
-		"[v9]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["requester"] + "':fontcolor=#c4c6ca:fontsize=27:x=820:y=655[v10]",
-		"[v10]drawtext=fontfile='" + fontBold + "':text='|<':fontcolor=#ffffff:fontsize=55:x=900:y=475[v11]",
-		"[v11]drawtext=fontfile='" + fontBold + "':text='||':fontcolor=#ffffff:fontsize=55:x=1115:y=475[v12]",
-		"[v12]drawtext=fontfile='" + fontBold + "':text='>|':fontcolor=#ffffff:fontsize=55:x=1320:y=475[v13]",
-		"[v13]drawtext=fontfile='" + fontRegular + "':text='VOLUME':fontcolor=#d8dadd:fontsize=30:x=820:y=735[v14]",
-		"[v14]drawbox=x=900:y=742:w=500:h=7:color=#41444a:t=fill[v15]",
-		"[v15]drawbox=x=900:y=742:w=180:h=7:color=#eeeeee:t=fill[v16]",
-		"[v16]drawtext=fontfile='" + fontRegular + "':text='♡':fontcolor=#d8dadd:fontsize=48:x=1450:y=370[v17]",
-		"[v17]drawtext=fontfile='" + fontRegular + "':text='◉':fontcolor=#d8dadd:fontsize=38:x=1455:y=490[v18]",
+		"[v0]drawbox=x=68:y=98:w=524:h=524:color=#101010@1:t=2[v1]",
+		"[v1]drawbox=x=625:y=72:w=585:h=576:color=#070707@1:t=fill[v2]",
+		"[v2]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["platform"] + "':fontcolor=#a7a7a7:fontsize=27:x=660:y=92[v3]",
+		"[v3]drawtext=fontfile='" + fontBold + "':textfile='" + paths["name"] + "':fontcolor=#f4f4f4:fontsize=34:x=660:y=135[v4]",
+		"[v4]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["artist"] + "':fontcolor=#a7a7a7:fontsize=27:x=660:y=185[v5]",
+		"[v5]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["elapsed"] + "':fontcolor=#bdbdbd:fontsize=20:x=660:y=228[v6]",
+		"[v6]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["remaining"] + "':fontcolor=#bdbdbd:fontsize=20:x=1150:y=228[v7]",
+		"[v7]drawbox=x=730:y=237:w=400:h=5:color=#454545:t=fill[v8]",
+		"[v8]drawbox=x=730:y=237:w=125:h=5:color=#e6e6e6:t=fill[v9]",
+		"[v9]drawtext=fontfile='" + fontRegular + "':textfile='" + paths["now"] + "':fontcolor=#eeeeee:fontsize=24:x=660:y=280[v10]",
+		"[v10]drawtext=fontfile='" + fontRegular + "':text='♡':fontcolor=#eeeeee:fontsize=42:x=1148:y=270[v11]",
+		"[v11]drawtext=fontfile='" + fontRegular + "':text='|◀':fontcolor=#f5f5f5:fontsize=45:x=730:y=360[v12]",
+		"[v12]drawtext=fontfile='" + fontBold + "':text='Ⅱ':fontcolor=#f5f5f5:fontsize=48:x=900:y=360[v13]",
+		"[v13]drawtext=fontfile='" + fontRegular + "':text='▶|':fontcolor=#f5f5f5:fontsize=45:x=1060:y=360[v14]",
+		"[v14]drawtext=fontfile='" + fontRegular + "':text='◎':fontcolor=#d8d8d8:fontsize=36:x=1150:y=365[v15]",
+		"[v15]drawbox=x=705:y=543:w=425:h=5:color=#454545:t=fill[v16]",
+		"[v16]drawbox=x=705:y=543:w=145:h=5:color=#e6e6e6:t=fill[v17]",
+		"[v17]drawtext=fontfile='" + fontRegular + "':text='V':fontcolor=#d8d8d8:fontsize=24:x=1148:y=527[v18]",
 		"[v18]format=yuvj420p[out]",
 	}, ";")
-
 	return runFFmpeg("-y", "-i", thumb, "-filter_complex", filter, "-map", "[out]", "-frames:v", "1", "-q:v", "2", output)
+}
+
+func fitText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max < 2 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func platformLabel(platform string) string {
